@@ -1,21 +1,19 @@
 sapply(c("stringr", "dplyr", "data.table", "purrr"), require, character=TRUE)
 
-#Params to potentially manipulate  
-#- magnitude (like the SCZ studies)   
-#- probability, especially lucas-newman lab work and general idea worry = less precise prob est  
+# Params to potentially manipulate: 
+# magnitude (like the SCZ studies)   
+# probability, especially lucas-newman lab work and general idea worry = less precise prob est  
 
-#Experimental setup 
+########################### Set Up Experiment ###########################
 states <- c("ab", "cd", "ef", "gh")
 every_stim <- c("a", "b", "c", "d", "e", "f", "g", "h")
-
-
 # Create a key to access every trial and output pos or neg reward with the appropriate probability  
-
 key <- data.table("stim"=every_stim, 
                   "pos_or_neg"=c(1, 1, 1, 1, -1, -1, -1, -1) , 
                   "p_nz"=c(.9, .8, .2, .1, .9, .8, .2, .1)) # Probability of non-zero outcome
+######################################################################
 
-# Create actor-critic simulation testbed  
+############ Create actor-critic simulation testbed  ##################
 # Critic value matrix = just values for the 4 states
 c_values <- rep(0, length(states))
 AC_PE <- 0
@@ -23,9 +21,10 @@ critic_dynamics <- list("critic_values"=c_values, "AC_PE"=AC_PE) # Package up th
 # Action weights comprising weights for the two available actions in each of the 4 states
 a_weights <- matrix(rep(0, length(states)*2), nrow=length(states))
 q_vals <- matrix(rep(0, length(states)*2), nrow=length(states))
-
-# Set up some learning and choice functions  
-########################### LEARNING ###########################
+######################################################################
+ 
+############# # Set up some learning and choice functions  ###########
+## Learning ## 
 UpdateCriticValue <- function(c_values, sidx, critic_LR, outcome, verbose=0) {
   ### Update the appropriate critic value based on the state we're in ###
   # Calc's a PE based on state value. Then passes this to actor to update its weights 
@@ -51,9 +50,8 @@ CalcQVals <- function(q_vals, q_LR, sidx, action, outcome) {
 ### Mix q values and AC values for this state outputting hybrid values ###
 MixACAndQVals <- function(qv_row, aw_row, value_mix_par) (1-value_mix_par) * aw_row + value_mix_par * qv_row
 # **Not implementing decay yet because just starting with training phase
-######################################################################
 
-########################### CHOICE ###########################
+## Choice ## 
 ### Softmax choice fx. Outputs chance of picking left stimulus ###
 CalcSoftmaxProbLeft <- function(values, beta) exp(beta*values[1])/sum(exp(beta*values[1]), exp(beta*values[2]))
 ### Mix the left choice probability with nondirected random choice (reflecting lapsing) with 
@@ -61,8 +59,8 @@ CalcSoftmaxProbLeft <- function(values, beta) exp(beta*values[1])/sum(exp(beta*v
 MixLeftChoiceWRandom <- function(left_c_prob_sm, lapsiness) (1 - lapsiness) * left_c_prob_sm + lapsiness * .5
 ######################################################################
 
-## Simulate training phase ##
-training_trials <- unlist(lapply(1:160, function(x) sample(training_trials, 1)))
+############# # Set up a training experiment  ###########
+training_trials <- unlist(lapply(1:160, function(x) sample(states, 1))) # 1 training phase
 train_df <- data.frame("trial"=1:160, "stimuli"=training_trials)
 stim_set <- key$stim # Vectorize 
 trial_keeper <- list()
@@ -98,7 +96,7 @@ for (tidx in seq_along(training_trials)) {
     # .. and outcome ##
     p_nz <- key[row_idx, "p_nz"]
     pos_or_neg <- key[row_idx, "pos_or_neg"]
-    outcome_str <- ifelse(p_rew < runif(1, 0, 1), "non_zero", "zero")
+    outcome_str <- ifelse(p_nz < runif(1, 0, 1), "non_zero", "zero")
     # Outcomes are probabilistically 0 so check if non-zero..
     if (as.character(outcome_str)=="non_zero") {
       # If non-zero, assign correct / incorrect outcome 
@@ -116,9 +114,9 @@ for (tidx in seq_along(training_trials)) {
   ## Learn based on result ## 
   # Critic who has RPEs just on state values.. 
   critic_out <- UpdateCriticValue(critic_dynamics["critic_values"], sidx, critic_LR, outcome)
-  critic_PE <- critic_out["AC_PE"]
+  AC_PE <- unlist(critic_out["AC_PE"])
   # .. and actor who computes on s, a pairs but just has access to the critic's values 
-  a_weights <- UpdateActorWeights(a_weights, sidx, action, actor_LR, critic_PE) 
+  a_weights <- UpdateActorWeights(a_weights, sidx, action, actor_LR, AC_PE) # Note actor takes in Critic's PE 
   
   q_vals <- CalcQVals(q_vals, q_LR, sidx, action, outcome) 
   
@@ -131,3 +129,4 @@ for (tidx in seq_along(training_trials)) {
                                       "choice"=choice,
                                       "outcome"=outcome)
 }
+######################################################################
