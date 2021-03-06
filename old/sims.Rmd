@@ -87,6 +87,7 @@ Simulate one agent
 training_trials <- unlist(lapply(1:160, function(x) sample(training_trials, 1)))
 train_df <- data.frame("trial"=1:160, "stimuli"=training_trials)
 stim_set <- key$stim # Vectorize 
+trial_keeper <- list()
 ## Par inits ##
 beta <- 5
 lapsiness <- .1 
@@ -141,9 +142,9 @@ for (tidx in seq_along(training_trials)) {
                                         row.names=F, col.names=F, quote=F) }
   
   ## Package up outputs this trial ##
-  data.table("state"=state,
-             "choice"=choice,
-             "outcome"=outcome)
+  trial_keeperp[[tidx]] <- data.table("state"=state,
+                                     "choice"=choice,
+                                     "outcome"=outcome)
 }
 ```
 
