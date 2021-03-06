@@ -1,4 +1,4 @@
-sapply(c("stringr", "dplyr", "data.table", "purrr", "foreach", "doParallel"), require, character=TRUE)
+sapply(c("stringr", "dplyr", "data.table", "purrr", "foreach", "doParallel", "ggplot2"), require, character=TRUE)
 #registerDoParallel(cores=round(detectCores()*2/3))
 # Params to potentially manipulate: 
 # magnitude (like the SCZ studies)   
@@ -28,7 +28,7 @@ q_vals <- matrix(rep(0, length(states)*2), nrow=length(states))
  
 ############# # Set up some learning and choice functions  ###########
 ## Learning ## 
-UpdateCriticValue <- function(c_values, sidx, critic_LR, outcome, verbose=NULL) {
+UpdateCriticValue <- function(c_values, sidx, critic_LR, outcome, helpers, verbose=NULL) {
   ### Update the appropriate critic value based on the state we're in ###
   # Calc's a PE based on state value. Then passes this to actor to update its weights 
   # Args: sidx=state value
@@ -38,49 +38,69 @@ UpdateCriticValue <- function(c_values, sidx, critic_LR, outcome, verbose=NULL) 
   if (!is.null(verbose)) cat("\n c_values", as.numeric(unlist(c_values))[sidx])
 list("critic_values"=c_values, "AC_PE"=AC_PE)
 } 
-UpdateActorWeights <- function(a_weights, sidx, action, actor_LR, AC_PE) {
+UpdateActorWeights <- function(a_weights, sidx, action, actor_LR, AC_PE, helpers) {
   ### Update the action weight only in the wake of a pos. PE. Args: sidx=state value ###
   # ** Check this.. If I understood from Geana paper this is only when PE is non-negative
   if (AC_PE > 0) a_weights[sidx, action] <- a_weights[sidx, action] + actor_LR * AC_PE
 a_weights  
 }
-CalcQVals <- function(q_vals, q_LR, sidx, action, outcome) {
+CalcQVals <- function(q_vals, q_LR, sidx, action, outcome, helpers) {
   ### Calc Q vals tracking full reward info. Args: sidx=state value ###
   qPE <- outcome - q_vals[sidx, action]
   q_vals[sidx, action] <- q_vals[sidx, action] + q_LR * qPE
 q_vals
 }
-### Mix q values and AC values for this state outputting hybrid values ###
-MixACAndQVals <- function(qv_row, aw_row, q_learner_prop) (1 - q_learner_prop) * aw_row + value_mix_par * q_learner_prop
+
+MixACAndQVals <- function(qv_row, aw_row, q_learner_prop, helpers) {
+  ### Mix q values and AC values for this state outputting hybrid values ###
+(1 - q_learner_prop) * aw_row + value_mix_par * q_learner_prop
+} 
 # **Not implementing decay yet because just starting with training phase
 
 ## Choice ## 
-### Softmax choice fx. Outputs chance of picking left stimulus ###
-CalcSoftmaxProbLeft <- function(values, beta) exp(beta * values[1])/sum(exp(beta * values[1]), exp(beta * values[2]))
-### Mix the left choice probability with nondirected random choice (reflecting lapsing) with 
-# contribution scaled by lapsines ###
-MixLeftChoiceWRandom <- function(left_c_prob_sm, lapsiness) (1 - lapsiness) * left_c_prob_sm + lapsiness * .5
+
+CalcSoftmaxProbLeft <- function(values, beta, helpers) {
+  ### Softmax choice fx. Outputs chance of picking left stimulus ###
+exp(beta * values[1])/sum(exp(beta * values[1]), exp(beta * values[2]))  
+}
+MixLeftChoiceWRandom <- function(left_c_prob_sm, lapsiness, helpers) {
+  ### Mix the left choice probability with nondirected random choice (reflecting lapsing) with 
+  # contribution scaled by lapsines ###
+(1 - lapsiness) * left_c_prob_sm + lapsiness * .5
+}
 ######################################################################
-RunATrainPhase <- function(states, key, state_key, verbose=NULL) {
+RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
   ### Run through one training phase ###
   ############# # Set up a training experiment  ###########
-  training_trials <- unlist(lapply(1:160, function(x) sample(states, 1))) # 1 training phase
-  train_df <- data.frame("trial"=1:160, "stimuli"=training_trials)
+  # Unpack stuff we'll need from helpers 
+  params <- helpers[["params"]]
+  beta <- params[["beta"]]
+  lapsiness <- params[["lapsiness"]]
+  q_learner_prop <- params[["q_learner_prop"]]
+  actor_LR <- params[["actor_LR"]] 
+  q_LR <- params[["q_LR"]] 
+  critic_LR <- params[["critic_LR"]]
+  training_df <- helpers[["training_df"]]
+  sim_or_opt <- helpers[["sim_or_opt"]]
+  
   stim_set <- key$stim # Vectorize 
   trial_keeper <- list()
-  
+  #browser()
   ## Loop through trials ##
   for (tidx in seq_along(training_trials)) {
     sidx <- as.numeric(which(as.character(train_df$stimuli)[tidx]==states)) # State index
     state <- states[sidx] # Character repr of state 
     if (!is.null(verbose)) cat("\n ### Trial ", tidx, "####",
                                "\n ---State", state, "---")
+    helpers[["trial_n"]] <- tidx
     ## Mix values and find choice probs ## 
+    #browser(expr=tidx==130)
     mix_values <- MixACAndQVals(q_vals[sidx, ], a_weights[sidx, ], q_learner_prop)
     left_prob_sm <- CalcSoftmaxProbLeft(mix_values, beta)
+    # ** to do check choice probs 
     left_full_prob <- MixLeftChoiceWRandom(left_prob_sm, lapsiness)
     
-    if (sim) {
+    if (sim_or_opt==1) {
       ## Simulate choice.. 
       choice <- ifelse(left_full_prob < runif(1, 0, 1), "left", "right")
       action <- ifelse(choice=="left", 1, 2) # Just a numerical code for choice
@@ -97,18 +117,19 @@ RunATrainPhase <- function(states, key, state_key, verbose=NULL) {
       # Outcomes are probabilistically 0 so check if non-zero..
       if (as.character(outcome_str)=="non_zero") {
         # If non-zero, assign correct / incorrect outcome 
-        outcome <- ifelse(pos_or_neg==1, .05, -.05) 
+        outcome <- ifelse(pos_or_neg==1, 1, -1) #.05, -.05) 
       } else { 
-        #browser()
         outcome <- 0
       }
     }
-    if (!is.null(verbose)) cat("\n Mixed values ", unlist(mix_values),
+    if (!is.null(verbose)) cat("\n Prob left choice", left_prob_sm,
+                               "\n Mixed values ", unlist(mix_values),
                                "\n Full choice prob (softmax + undirected)", unlist(left_full_prob),
                                "\n Choose", choice,
                                "\n Correct?", ifelse(correct, "Yes!", "Nooope"),
                                "\n Probability of non-zero outcome", unlist(p_nz),
                                "\n Outcome", outcome)
+    
     ## Learn based on result ## 
     # Critic who has RPEs just on state values.. 
     critic_out <- UpdateCriticValue(critic_dynamics["critic_values"], sidx, critic_LR, outcome)
@@ -118,29 +139,44 @@ RunATrainPhase <- function(states, key, state_key, verbose=NULL) {
     
     q_vals <- CalcQVals(q_vals, q_LR, sidx, action, outcome) 
     
-    if (!is.null(verbose)) { cat("\nA-C|Q v \n")
+    if (!is.null(verbose)) { cat("\n           A-C             |       Q v \n")
       write.table(format(cbind(a_weights, q_vals), justify="right"),
                   row.names=F, col.names=F, quote=F) }
     
     ## Package up outputs this trial ##
-    trial_keeper[[tidx]] <- data.table(state,
+    trial_keeper[[tidx]] <- data.table(tidx,
+                                       state,
                                        choice,
                                        "outcome"=as.numeric(outcome),
-                                       correct)
+                                       correct)                                       
   }
   ######################################################################
   output <- trial_keeper %>% bind_rows()
 output  
 }
-## Par inits ##
-beta <- 5
-lapsiness <- 0
-q_learner_prop <- .9
-actor_LR <- .1 
-q_LR <- .4
-critic_LR <- .1
-sim <- 1 # Do you want to simulate?
+## Initializations ##
+n_trials <- 160
+helpers <- list() # List of stuff we'll need to shuttle around fxs 
+params <- list() # Free pars
+params[["beta"]] <- 20
+params[["lapsiness"]] <- .01
+params[["q_learner_prop"]] <- .9
+params[["actor_LR"]] <- .1
+params[["q_LR"]] <- .25
+params[["critic_LR"]] <- .1
+helpers[["params"]] <- params
+helpers[["sim_or_opt"]] <- 1 # Simulate (1) or optimize (2)? (opt not yet built)
+training_trials <- unlist(lapply(1:n_trials, function(x) sample(states, 1))) # 1 training phase
+train_df <- data.frame("trial"=1:n_trials, "stimuli"=training_trials)
+helpers[["train_df"]] <- train_df
 verbose <- 1 # Trial-wise print out?
 
+iters <- 30
+out <- foreach(i=1:iters) %dopar% RunATrainPhase(states, key, state_key, helpers, 1) 
+for (iter in 1:iters) out[[iter]]$iter <- iter # Label iteration
+out_dt <- do.call(rbind, out)
 
-out <- foreach(i=1:30) %dopar% RunATrainPhase(states, key, state_key, 1) %>% bind_rows()
+# Not improving over time so still seems to be a bug
+summs <- out_dt %>% group_by(tidx) %>% summarize(m=mean(correct)) %>% tail(50)
+ggplot(summs, aes(x=tidx, y=m)) + geom_line() #+ facet_wrap(~ iter)
+
