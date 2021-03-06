@@ -53,7 +53,9 @@ q_vals
 
 MixACAndQVals <- function(qv_row, aw_row, q_learner_prop, helpers) {
   ### Mix q values and AC values for this state outputting hybrid values ###
-(1 - q_learner_prop) * aw_row + value_mix_par * q_learner_prop
+  mix_weight <- (1 - q_learner_prop) * aw_row + qv_row * q_learner_prop
+  #browser()
+mix_weight  
 } 
 # **Not implementing decay yet because just starting with training phase
 
@@ -85,7 +87,7 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
   
   stim_set <- key$stim # Vectorize 
   trial_keeper <- list()
-  #browser()
+  
   ## Loop through trials ##
   for (tidx in seq_along(training_trials)) {
     sidx <- as.numeric(which(as.character(train_df$stimuli)[tidx]==states)) # State index
@@ -94,8 +96,8 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
                                "\n ---State", state, "---")
     helpers[["trial_n"]] <- tidx
     ## Mix values and find choice probs ## 
-    #browser(expr=tidx==130)
-    mix_values <- MixACAndQVals(q_vals[sidx, ], a_weights[sidx, ], q_learner_prop)
+    
+    mix_values <- MixACAndQVals(q_vals[sidx, ], a_weights[sidx, ], q_learner_prop, helpers)
     left_prob_sm <- CalcSoftmaxProbLeft(mix_values, beta)
     # ** to do check choice probs 
     left_full_prob <- MixLeftChoiceWRandom(left_prob_sm, lapsiness)
@@ -122,11 +124,12 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
         outcome <- 0
       }
     }
-    if (!is.null(verbose)) cat("\n Prob left choice", left_prob_sm,
+    if (!is.null(verbose)) cat("\n Mix values", mix_values,
+                               "\n Prob left choice", left_prob_sm,
                                "\n Mixed values ", unlist(mix_values),
                                "\n Full choice prob (softmax + undirected)", unlist(left_full_prob),
                                "\n Choose", choice,
-                               "\n Correct?", ifelse(correct, "Yes!", "Nooope"),
+                               "\n Correct?     ", ifelse(correct, "Yes!", "Nooope"),
                                "\n Probability of non-zero outcome", unlist(p_nz),
                                "\n Outcome", outcome)
     
@@ -155,28 +158,36 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
 output  
 }
 ## Initializations ##
-n_trials <- 160
+n_trials <- 400
 helpers <- list() # List of stuff we'll need to shuttle around fxs 
 params <- list() # Free pars
 params[["beta"]] <- 20
-params[["lapsiness"]] <- .01
+params[["lapsiness"]] <- .025
 params[["q_learner_prop"]] <- .9
 params[["actor_LR"]] <- .1
-params[["q_LR"]] <- .25
+params[["q_LR"]] <- .01
 params[["critic_LR"]] <- .1
 helpers[["params"]] <- params
 helpers[["sim_or_opt"]] <- 1 # Simulate (1) or optimize (2)? (opt not yet built)
 training_trials <- unlist(lapply(1:n_trials, function(x) sample(states, 1))) # 1 training phase
 train_df <- data.frame("trial"=1:n_trials, "stimuli"=training_trials)
 helpers[["train_df"]] <- train_df
+
+# More settings
+parallelize <- 1
 verbose <- 1 # Trial-wise print out?
 
-iters <- 30
-out <- foreach(i=1:iters) %dopar% RunATrainPhase(states, key, state_key, helpers, 1) 
+iters <- 80
+if (parallelize) {
+  out <- foreach(i=1:iters) %dopar% RunATrainPhase(states, key, state_key, helpers, 1)   
+} else {
+  out <- foreach(i=1:iters) %do% RunATrainPhase(states, key, state_key, helpers, 1)   
+}
+
 for (iter in 1:iters) out[[iter]]$iter <- iter # Label iteration
 out_dt <- do.call(rbind, out)
 
 # Not improving over time so still seems to be a bug
-summs <- out_dt %>% group_by(tidx) %>% summarize(m=mean(correct)) %>% tail(50)
+summs <- out_dt %>% group_by(tidx) %>% summarize(m=mean(correct))# %>% tail(50)
 ggplot(summs, aes(x=tidx, y=m)) + geom_line() #+ facet_wrap(~ iter)
 
