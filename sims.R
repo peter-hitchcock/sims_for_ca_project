@@ -33,27 +33,27 @@ UpdateCriticValue <- function(c_values, sidx, critic_LR, outcome, verbose=0) {
   AC_PE <- as.numeric(outcome - c_values[sidx]) #as.numeric(unlist(c_values))[sidx]
   c_values[sidx] <- as.numeric(c_values[sidx] + critic_LR * AC_PE)
   if (!is.null(verbose)) cat("\n c_values", as.numeric(unlist(c_values))[sidx])
-  list("critic_values"=c_values, "AC_PE"=AC_PE)
+list("critic_values"=c_values, "AC_PE"=AC_PE)
 } 
 UpdateActorWeights <- function(a_weights, sidx, action, actor_LR, AC_PE) {
   ### Update the action weight only in the wake of a pos. PE. Args: sidx=state value ###
   # ** Check this.. If I understood from Geana paper this is only when PE is non-negative
   if (AC_PE > 0) a_weights[sidx, action] <- a_weights[sidx, action] + actor_LR * AC_PE
-  a_weights  
+a_weights  
 }
 CalcQVals <- function(q_vals, q_LR, sidx, action, outcome) {
   ### Calc Q vals tracking full reward info. Args: sidx=state value ###
   qPE <- outcome - q_vals[sidx, action]
   q_vals[sidx, action] <- q_vals[sidx, action] + q_LR * qPE
-  q_vals
+q_vals
 }
 ### Mix q values and AC values for this state outputting hybrid values ###
-MixACAndQVals <- function(qv_row, aw_row, value_mix_par) (1-value_mix_par) * aw_row + value_mix_par * qv_row
+MixACAndQVals <- function(qv_row, aw_row, value_mix_par) (1 - value_mix_par) * aw_row + value_mix_par * qv_row
 # **Not implementing decay yet because just starting with training phase
 
 ## Choice ## 
 ### Softmax choice fx. Outputs chance of picking left stimulus ###
-CalcSoftmaxProbLeft <- function(values, beta) exp(beta*values[1])/sum(exp(beta*values[1]), exp(beta*values[2]))
+CalcSoftmaxProbLeft <- function(values, beta) exp(beta * values[1])/sum(exp(beta * values[1]), exp(beta * values[2]))
 ### Mix the left choice probability with nondirected random choice (reflecting lapsing) with 
 # contribution scaled by lapsines ###
 MixLeftChoiceWRandom <- function(left_c_prob_sm, lapsiness) (1 - lapsiness) * left_c_prob_sm + lapsiness * .5
@@ -86,7 +86,7 @@ for (tidx in seq_along(training_trials)) {
   left_full_prob <- MixLeftChoiceWRandom(left_prob_sm, lapsiness)
   
   if (sim) {
-    ## Simulate choice and action.. 
+    ## Simulate choice.. 
     choice <- ifelse(left_full_prob < runif(1, 0, 1), "left", "right")
     action <- ifelse(choice=="left", 1, 2) # Just a numerical code for choice
     if (choice=="left") stim <- unlist(map(str_extract_all(state, boundary("character")), 1))
@@ -101,7 +101,7 @@ for (tidx in seq_along(training_trials)) {
     if (as.character(outcome_str)=="non_zero") {
       # If non-zero, assign correct / incorrect outcome 
       outcome <- ifelse(pos_or_neg==1, .05, -.05) 
-    } else { # ..otherwise 0 
+    } else { 
       outcome <- 0
     }
     outcome <- ifelse((as.character(outcome_str)=="non_zero" & pos_or_neg==1), .05, -.05) 
@@ -115,8 +115,8 @@ for (tidx in seq_along(training_trials)) {
   # Critic who has RPEs just on state values.. 
   critic_out <- UpdateCriticValue(critic_dynamics["critic_values"], sidx, critic_LR, outcome)
   AC_PE <- unlist(critic_out["AC_PE"])
-  # .. and actor who computes on s, a pairs but just has access to the critic's values 
-  a_weights <- UpdateActorWeights(a_weights, sidx, action, actor_LR, AC_PE) # Note actor takes in Critic's PE 
+  # .. and actor who computes on s,a pairs but just has access to the critic's values 
+  a_weights <- UpdateActorWeights(a_weights, sidx, action, actor_LR, AC_PE) 
   
   q_vals <- CalcQVals(q_vals, q_LR, sidx, action, outcome) 
   
