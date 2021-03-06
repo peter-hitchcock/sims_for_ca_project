@@ -1,5 +1,5 @@
-sapply(c("stringr", "dplyr", "data.table", "purrr"), require, character=TRUE)
-
+sapply(c("stringr", "dplyr", "data.table", "purrr", "foreach", "doParallel"), require, character=TRUE)
+#registerDoParallel(cores=round(detectCores()*2/3))
 # Params to potentially manipulate: 
 # magnitude (like the SCZ studies)   
 # probability, especially lucas-newman lab work and general idea worry = less precise prob est  
@@ -7,10 +7,13 @@ sapply(c("stringr", "dplyr", "data.table", "purrr"), require, character=TRUE)
 ########################### Set Up Experiment ###########################
 states <- c("ab", "cd", "ef", "gh")
 every_stim <- c("a", "b", "c", "d", "e", "f", "g", "h")
+better_state <- c("left", "left", "right", "right")
 # Create a key to access every trial and output pos or neg reward with the appropriate probability  
 key <- data.table("stim"=every_stim, 
                   "pos_or_neg"=c(1, 1, 1, 1, -1, -1, -1, -1) , 
                   "p_nz"=c(.9, .8, .2, .1, .9, .8, .2, .1)) # Probability of non-zero outcome
+# To determine if made the optimal choice on a trial
+state_key <- data.table(states, "better_choice"=better_state)
 ######################################################################
 
 ############ Create actor-critic simulation testbed  ##################
@@ -25,7 +28,7 @@ q_vals <- matrix(rep(0, length(states)*2), nrow=length(states))
  
 ############# # Set up some learning and choice functions  ###########
 ## Learning ## 
-UpdateCriticValue <- function(c_values, sidx, critic_LR, outcome, verbose=0) {
+UpdateCriticValue <- function(c_values, sidx, critic_LR, outcome, verbose=NULL) {
   ### Update the appropriate critic value based on the state we're in ###
   # Calc's a PE based on state value. Then passes this to actor to update its weights 
   # Args: sidx=state value
@@ -48,7 +51,7 @@ CalcQVals <- function(q_vals, q_LR, sidx, action, outcome) {
 q_vals
 }
 ### Mix q values and AC values for this state outputting hybrid values ###
-MixACAndQVals <- function(qv_row, aw_row, value_mix_par) (1 - value_mix_par) * aw_row + value_mix_par * qv_row
+MixACAndQVals <- function(qv_row, aw_row, q_learner_prop) (1 - q_learner_prop) * aw_row + value_mix_par * q_learner_prop
 # **Not implementing decay yet because just starting with training phase
 
 ## Choice ## 
@@ -58,75 +61,86 @@ CalcSoftmaxProbLeft <- function(values, beta) exp(beta * values[1])/sum(exp(beta
 # contribution scaled by lapsines ###
 MixLeftChoiceWRandom <- function(left_c_prob_sm, lapsiness) (1 - lapsiness) * left_c_prob_sm + lapsiness * .5
 ######################################################################
-
-############# # Set up a training experiment  ###########
-training_trials <- unlist(lapply(1:160, function(x) sample(states, 1))) # 1 training phase
-train_df <- data.frame("trial"=1:160, "stimuli"=training_trials)
-stim_set <- key$stim # Vectorize 
-trial_keeper <- list()
+RunATrainPhase <- function(states, key, state_key, verbose=NULL) {
+  ### Run through one training phase ###
+  ############# # Set up a training experiment  ###########
+  training_trials <- unlist(lapply(1:160, function(x) sample(states, 1))) # 1 training phase
+  train_df <- data.frame("trial"=1:160, "stimuli"=training_trials)
+  stim_set <- key$stim # Vectorize 
+  trial_keeper <- list()
+  
+  ## Loop through trials ##
+  for (tidx in seq_along(training_trials)) {
+    sidx <- as.numeric(which(as.character(train_df$stimuli)[tidx]==states)) # State index
+    state <- states[sidx] # Character repr of state 
+    if (!is.null(verbose)) cat("\n ### Trial ", tidx, "####",
+                               "\n ---State", state, "---")
+    ## Mix values and find choice probs ## 
+    mix_values <- MixACAndQVals(q_vals[sidx, ], a_weights[sidx, ], q_learner_prop)
+    left_prob_sm <- CalcSoftmaxProbLeft(mix_values, beta)
+    left_full_prob <- MixLeftChoiceWRandom(left_prob_sm, lapsiness)
+    
+    if (sim) {
+      ## Simulate choice.. 
+      choice <- ifelse(left_full_prob < runif(1, 0, 1), "left", "right")
+      action <- ifelse(choice=="left", 1, 2) # Just a numerical code for choice
+      if (choice=="left") stim <- unlist(map(str_extract_all(state, boundary("character")), 1))
+      if (choice=="right") stim <- unlist(map(str_extract_all(state, boundary("character")), 2))
+      # Find if the choice was correct ie. optimal this trial 
+      correct <- ifelse(choice==as.character(state_key[states==state, "better_choice"]), 1, 0)
+      
+      # .. and outcome ##
+      row_idx <- which(stim_set==stim)
+      p_nz <- key[row_idx, "p_nz"]
+      pos_or_neg <- key[row_idx, "pos_or_neg"]
+      outcome_str <- ifelse(p_nz < runif(1, 0, 1), "non_zero", "zero")
+      # Outcomes are probabilistically 0 so check if non-zero..
+      if (as.character(outcome_str)=="non_zero") {
+        # If non-zero, assign correct / incorrect outcome 
+        outcome <- ifelse(pos_or_neg==1, .05, -.05) 
+      } else { 
+        #browser()
+        outcome <- 0
+      }
+    }
+    if (!is.null(verbose)) cat("\n Mixed values ", unlist(mix_values),
+                               "\n Full choice prob (softmax + undirected)", unlist(left_full_prob),
+                               "\n Choose", choice,
+                               "\n Correct?", ifelse(correct, "Yes!", "Nooope"),
+                               "\n Probability of non-zero outcome", unlist(p_nz),
+                               "\n Outcome", outcome)
+    ## Learn based on result ## 
+    # Critic who has RPEs just on state values.. 
+    critic_out <- UpdateCriticValue(critic_dynamics["critic_values"], sidx, critic_LR, outcome)
+    AC_PE <- unlist(critic_out["AC_PE"])
+    # .. and actor who computes on s,a pairs but just has access to the critic's values 
+    a_weights <- UpdateActorWeights(a_weights, sidx, action, actor_LR, AC_PE) 
+    
+    q_vals <- CalcQVals(q_vals, q_LR, sidx, action, outcome) 
+    
+    if (!is.null(verbose)) { cat("\nA-C|Q v \n")
+      write.table(format(cbind(a_weights, q_vals), justify="right"),
+                  row.names=F, col.names=F, quote=F) }
+    
+    ## Package up outputs this trial ##
+    trial_keeper[[tidx]] <- data.table(state,
+                                       choice,
+                                       "outcome"=as.numeric(outcome),
+                                       correct)
+  }
+  ######################################################################
+  output <- trial_keeper %>% bind_rows()
+output  
+}
 ## Par inits ##
 beta <- 5
-lapsiness <- .1 
-value_mix_par <- .5
+lapsiness <- 0
+q_learner_prop <- .9
 actor_LR <- .1 
-q_LR <- .2
+q_LR <- .4
 critic_LR <- .1
 sim <- 1 # Do you want to simulate?
 verbose <- 1 # Trial-wise print out?
 
-## Loop through trials ##
-for (tidx in seq_along(training_trials)) {
-  sidx <- as.numeric(which(as.character(train_df$stimuli)[tidx]==states)) # State index
-  state <- states[sidx] # Character repr of state 
-  if (!is.null(verbose)) cat("\n ### Trial ", tidx, "####",
-                             "\n ---State", state, "---")
-  ## Mix values and find choice probs ## 
-  mix_values <- MixACAndQVals(q_vals[sidx, ], a_weights[sidx, ], value_mix_par)
-  left_prob_sm <- CalcSoftmaxProbLeft(mix_values, beta)
-  left_full_prob <- MixLeftChoiceWRandom(left_prob_sm, lapsiness)
-  
-  if (sim) {
-    ## Simulate choice.. 
-    choice <- ifelse(left_full_prob < runif(1, 0, 1), "left", "right")
-    action <- ifelse(choice=="left", 1, 2) # Just a numerical code for choice
-    if (choice=="left") stim <- unlist(map(str_extract_all(state, boundary("character")), 1))
-    if (choice=="right") stim <- unlist(map(str_extract_all(state, boundary("character")), 2))
-    row_idx <- which(stim_set==stim)
-    
-    # .. and outcome ##
-    p_nz <- key[row_idx, "p_nz"]
-    pos_or_neg <- key[row_idx, "pos_or_neg"]
-    outcome_str <- ifelse(p_nz < runif(1, 0, 1), "non_zero", "zero")
-    # Outcomes are probabilistically 0 so check if non-zero..
-    if (as.character(outcome_str)=="non_zero") {
-      # If non-zero, assign correct / incorrect outcome 
-      outcome <- ifelse(pos_or_neg==1, .05, -.05) 
-    } else { 
-      outcome <- 0
-    }
-    outcome <- ifelse((as.character(outcome_str)=="non_zero" & pos_or_neg==1), .05, -.05) 
-  }
-  if (!is.null(verbose)) cat("\n Mixed values ", unlist(mix_values),
-                             "\n Full choice prob (softmax + undirected)", unlist(left_full_prob),
-                             "\n Choose", choice,
-                             "\n Probability of non-zero outcome", unlist(p_nz),
-                             "\n Outcome", outcome)
-  ## Learn based on result ## 
-  # Critic who has RPEs just on state values.. 
-  critic_out <- UpdateCriticValue(critic_dynamics["critic_values"], sidx, critic_LR, outcome)
-  AC_PE <- unlist(critic_out["AC_PE"])
-  # .. and actor who computes on s,a pairs but just has access to the critic's values 
-  a_weights <- UpdateActorWeights(a_weights, sidx, action, actor_LR, AC_PE) 
-  
-  q_vals <- CalcQVals(q_vals, q_LR, sidx, action, outcome) 
-  
-  if (!is.null(verbose)) { cat("\nA-C|Q v \n")
-    write.table(format(cbind(a_weights, q_vals), justify="right"),
-                row.names=F, col.names=F, quote=F) }
-  
-  ## Package up outputs this trial ##
-  trial_keeper[[tidx]] <- data.table("state"=state,
-                                      "choice"=choice,
-                                      "outcome"=outcome)
-}
-######################################################################
+
+out <- foreach(i=1:30) %dopar% RunATrainPhase(states, key, state_key, 1) %>% bind_rows()
