@@ -1,0 +1,108 @@
+---
+title: "Sims of actor-critic vs q-learner"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+sapply(c("stringr", "dplyr", "data.table", "purrr", "foreach", "doParallel", "ggplot2"), require, character=TRUE)
+sf <- function() sapply(paste0("./Functions/", list.files("./Functions/", recursive=TRUE)), source) # Source all fxs
+sf()
+DefPlotPars()
+```
+
+# Params to consider manipulating:  
+- have transfer phase after every train phase?
+- magnitude (like the SCZ studies)   
+- probability, especially lucas-newman lab work and general idea worry = less precise prob est  
+
+Experimental setup 
+```{r}
+states <- c("ab", "cd", "ef", "gh")
+every_stim <- c("a", "b", "c", "d", "e", "f", "g", "h")
+better_state <- c("left", "left", "right", "right")
+# Create a key to access every trial and output pos or neg reward with the appropriate probability  
+key <- data.table("stim"=every_stim, 
+                  "pos_or_neg"=c(1, 1, 1, 1, -1, -1, -1, -1) , 
+                  "p_nz"=c(.9, .8, .2, .1, .9, .8, .2, .1)) # Probability of non-zero outcome
+# To determine if made the optimal choice on a trial
+state_key <- data.table(states, "better_choice"=better_state)
+```
+
+# Create actor-critic simulation testbed  
+
+```{r}
+# Critic value matrix = just values for the 4 states
+c_values <- rep(0, length(states))
+AC_PE <- 0
+critic_dynamics <- list("critic_values"=c_values, "AC_PE"=AC_PE) # Package up the critic's dynamics
+# Action weights comprising weights for the two available actions in each of the 4 states
+a_weights <- matrix(rep(0, length(states)*2), nrow=length(states))
+q_vals <- matrix(rep(0, length(states)*2), nrow=length(states))
+```
+
+
+Set up some learning and choice functions  
+```{r}
+## Initializations ##
+helpers <- list() # List of stuff we'll need to shuttle around fxs 
+params <- list() # Free pars
+params[["beta"]] <- 10
+params[["lapsiness"]] <- 0.5
+params[["q_learner_prop"]] <- .9
+params[["actor_LR"]] <- .1
+params[["q_LR"]] <- .1
+params[["critic_LR"]] <- .1
+helpers[["params"]] <- params
+helpers[["sim_or_opt"]] <- 1 # Simulate (1) or optimize (2)? (opt not yet built)
+#train_df <- data.frame("trial"=1:n_trials, "stimuli"=training_trials)
+helpers[["train_df"]] <- train_df
+
+# More settings
+parallelize <- 1
+verbose <- 1 # Trial-wise print out?
+```
+
+Testing: 
+- We want to see how much we can get from N trials of training phase data in differentiating pts with different reliance on actor-critic. 
+  - As a first pass, look at raw accuracy data just at training for 100 trials with a range of q-learner (vs. AC) reliance  
+
+
+To do, when back: 
+- Set params above to realistic values basd on papers  
+- Implement decay?  
+
+```{r}
+q_learner_prop_range <- seq(.25, .9, .05)
+ql_train_test <- lapply(q_learner_prop_range, function(x) {
+  # Simulate q_learner at a given range #
+  params[["q_learner_prop"]] <- x
+  helpers[["n_trials"]] <- 100
+  iters <- 100
+  if (parallelize) {
+    out <- foreach(i=1:iters) %dopar% RunATrainPhase(states, key, state_key, helpers, 1)   
+  } else {
+    out <- foreach(i=1:iters) %do% RunATrainPhase(states, key, state_key, helpers, 1)   
+  }
+  
+  for (iter in 1:iters) out[[iter]]$iter <- iter # Label iteration
+  out_dt <- do.call(rbind, out)
+  out_dt$q_learner_prop <- x # Store q-learner prop
+out_dt
+})
+ql_train_dt <- ql_train_test %>% bind_rows()
+```
+
+
+```{r}
+# Not improving over time so still seems to be a bug
+summs <- ql_train_dt %>% group_by(tidx, q_learner_prop, group=1) %>% summarize(m=mean(correct))
+
+# From eyeballing it, seems like there's lot of random variation even w 100 iters and that 
+# this param does not lead to much diff in the acc data w these settings 
+ggplot(summs, aes(x=tidx, y=m)) + geom_line(size=2) + 
+  ga + ap + geom_hline(yintercept=.5) + facet_wrap(~ q_learner_prop) 
+```
