@@ -24,7 +24,7 @@ state_key <- data.table(states, "better_choice"=better_state)
 n_trials <- 400
 helpers <- list() # List of stuff we'll need to shuttle around fxs 
 params <- list() # Free pars
-params[["beta"]] <- 100
+params[["beta"]] <- 10
 params[["lapsiness"]] <- .025
 params[["q_learner_prop"]] <- .9
 params[["actor_LR"]] <- .1
@@ -35,12 +35,9 @@ helpers[["sim_or_opt"]] <- 1 # Simulate (1) or optimize (2)? (opt not yet built)
 helpers[["n_trials"]] <- n_trials
 training_trials <- unlist(lapply(1:n_trials, function(x) sample(states, 1))) # 1 training phase
 
-# train_df <- data.frame("trial"=1:n_trials, "stimuli"=training_trials)
-# helpers[["train_df"]] <- train_df
-
 # More settings
 parallelize <- 0
-verbose <- 1 # Trial-wise print out?
+verbose <- 0 # Trial-wise print out?
 
 iters <- 80
 if (parallelize) {

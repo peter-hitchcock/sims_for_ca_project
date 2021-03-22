@@ -4,16 +4,16 @@ UpdateCriticValue <- function(c_values, sidx, critic_LR, outcome, helpers, verbo
   ### Update the appropriate critic value based on the state we're in ###
   # Calc's a PE based on state value. Then passes this to actor to update its weights 
   # Args: sidx=state value
-  #browser()
   c_values <- as.numeric(unlist(c_values))
   outcome <- as.numeric(outcome)
-  cat("\n Outcome:", outcome)
-  #browser(expr=helpers[["trial_n"]]==40)
+  
   AC_PE <- as.numeric(as.numeric(outcome) - c_values[sidx]) #as.numeric(unlist(c_values))[sidx]
   c_values[sidx] <- as.numeric(c_values[sidx] + critic_LR * AC_PE)
-  #if (verbose) 
-  cat("\n Critic value", as.numeric(unlist(c_values))[sidx])
-  cat("\n Critic PE", AC_PE)
+  if (verbose)  {
+    cat("\n Critic value", as.numeric(unlist(c_values))[sidx])
+    cat("\n Critic PE", AC_PE)  
+  }
+  
 list("critic_values"=c_values, "AC_PE"=AC_PE)
 } 
 UpdateActorWeights <- function(a_weights, sidx, action, actor_LR, AC_PE, helpers) {
@@ -96,11 +96,23 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
     left_full_prob <- MixLeftChoiceWRandom(left_prob_sm, lapsiness)
     
     if (sim_or_opt==1) {
+      if (tidx>300) verbose <- 1
       ## Simulate choice.. 
-      choice <- ifelse(left_full_prob < runif(1, 0, 1), "left", "right")
-      action <- ifelse(choice=="left", 1, 2) # Just a numerical code for choice
-      if (choice=="left") stim <- unlist(map(str_extract_all(state, boundary("character")), 1))
-      if (choice=="right") stim <- unlist(map(str_extract_all(state, boundary("character")), 2))
+      rd <- runif(1, 0, 1)
+      if (rd < left_full_prob) { choice <- "left"  } else { choice <- "right" }
+      
+      #if (choice == "left") {action <- 1} else {action <- 2}
+      
+      if (choice=="left") {
+        # Pull the left part of character to get the stim (eg. "a")
+        stim <- unlist(map(str_extract_all(state, boundary("character")), 1))
+        # Action index
+        action <- 1
+      }
+      if (choice=="right") {
+        stim <- unlist(map(str_extract_all(state, boundary("character")), 2))
+        action <- 2
+      }
       # Find if the choice was correct ie. optimal this trial 
       correct <- ifelse(choice==as.character(state_key[states==state, "better_choice"]), 1, 0)
       
@@ -131,7 +143,6 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
     ## Learn based on result ## 
     # Critic who has RPEs just on state values.. 
     critic_out <- UpdateCriticValue(critic_values, sidx, critic_LR, outcome, helpers, verbose)
-    #browser(expr=tidx==40)
     critic_values <- unlist(critic_out[["critic_values"]])
     AC_PE <- unlist(critic_out[["AC_PE"]])
     # .. and actor who computes on s,a pairs but just has access to the critic's values 
