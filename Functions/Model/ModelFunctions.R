@@ -32,7 +32,6 @@ q_vals
 MixACAndQVals <- function(qv_row, aw_row, q_learner_prop, helpers) {
   ### Mix q values and AC values for this state outputting hybrid values ###
   mix_weight <- (1 - q_learner_prop) * aw_row + qv_row * q_learner_prop
-  #browser()
 mix_weight  
 } 
 # **Not implementing decay yet because just starting with training phase
@@ -55,7 +54,6 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
   ### Run through one training phase ###
   ############# # Set up a training experiment  ###########
   # Unpack stuff we'll need from helpers 
-  
   params <- helpers[["params"]]
   beta <- params[["beta"]]
   lapsiness <- params[["lapsiness"]]

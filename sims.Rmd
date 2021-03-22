@@ -82,12 +82,13 @@ To do, when back:
 - Implement decay?  
 
 ```{r}
-q_learner_prop_range <- seq(.25, .9, .05)
+q_learner_prop_range <- seq(.1, 1, .1)
 ql_train_test <- lapply(q_learner_prop_range, function(x) {
   # Simulate q_learner at a given range #
   params[["q_learner_prop"]] <- x
-  helpers[["n_trials"]] <- 300
-  iters <- 100
+  helpers[["params"]] <- params
+  helpers[["n_trials"]] <- 400
+  iters <- 40
   if (parallelize) {
     verbose <- 0
     out <- foreach(i=1:iters) %dopar% RunATrainPhase(states, key, state_key, helpers, verbose)   
@@ -108,8 +109,7 @@ ql_train_dt <- ql_train_test %>% bind_rows()
 # Not improving over time so still seems to be a bug
 summs <- ql_train_dt %>% group_by(tidx, q_learner_prop, group=1) %>% summarize(m=mean(correct))
 
-# From eyeballing it, seems like there's lot of random variation even w 100 iters and that 
-# this param does not lead to much diff in the acc data w these settings 
-ggplot(summs, aes(x=tidx, y=m)) + geom_line(size=2) + 
-  ga + ap + geom_hline(yintercept=.5) + facet_wrap(~ q_learner_prop) 
+# Looks like you only get much difference asymptotically with 400 trials
+ggplot(summs, aes(x=tidx, y=m)) + geom_line(size=.8) + 
+  ga + ap + geom_hline(yintercept=c(.5, .6, .7, .8, .9)) + facet_wrap(~ q_learner_prop) 
 ```

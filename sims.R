@@ -24,7 +24,7 @@ state_key <- data.table(states, "better_choice"=better_state)
 n_trials <- 400
 helpers <- list() # List of stuff we'll need to shuttle around fxs 
 params <- list() # Free pars
-params[["beta"]] <- 10
+params[["beta"]] <- 4
 params[["lapsiness"]] <- .025
 params[["q_learner_prop"]] <- 1
 params[["actor_LR"]] <- .1
@@ -37,7 +37,7 @@ training_trials <- unlist(lapply(1:n_trials, function(x) sample(states, 1))) # 1
 
 # More settings
 parallelize <- 0
-verbose <- 0 # Trial-wise print out?
+verbose <- 1 # Trial-wise print out?
 
 iters <- 80
 if (parallelize) {
@@ -55,3 +55,11 @@ summs <- out_dt %>% group_by(tidx) %>% summarize(m=mean(correct))
 # this param does not lead to much diff in the acc data w these settings 
 ggplot(summs, aes(x=tidx, y=m)) + geom_line(size=2) + 
   ga + ap + geom_hline(yintercept=.5) + facet_wrap(~ q_learner_prop) 
+
+
+##########  SIMS OF KONOVA ET AL. 19 AMBIG RISK TASK ##################
+n_trials <- 120
+risk_offer <- seq(5, 66, 2)
+risk_known_probs <- c(25, 50, 75)
+
+######################################################################
