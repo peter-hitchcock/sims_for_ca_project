@@ -1,5 +1,8 @@
 sapply(c("stringr", "dplyr", "data.table", "purrr", "foreach", "doParallel", "ggplot2"), require, character=TRUE)
-#registerDoParallel(cores=round(detectCores()*2/3))
+sf <- function() sapply(paste0("./Functions/", list.files("./Functions/", recursive=TRUE)), source) # Source all fxs
+sf()
+DefPlotPars()
+registerDoParallel(cores=round(detectCores()*2/3))
 # Params to potentially manipulate: 
 # magnitude (like the SCZ studies)   
 # probability, especially lucas-newman lab work and general idea worry = less precise prob est  
@@ -17,15 +20,6 @@ state_key <- data.table(states, "better_choice"=better_state)
 ######################################################################
 
 ############ Create actor-critic simulation testbed  ##################
-# Critic value matrix = just values for the 4 states
-c_values <- rep(0, length(states))
-AC_PE <- 0
-critic_dynamics <- list("critic_values"=c_values, "AC_PE"=AC_PE) # Package up the critic's dynamics
-# Action weights comprising weights for the two available actions in each of the 4 states
-a_weights <- matrix(rep(0, length(states)*2), nrow=length(states))
-q_vals <- matrix(rep(0, length(states)*2), nrow=length(states))
-######################################################################
-
 ## Initializations ##
 n_trials <- 400
 helpers <- list() # List of stuff we'll need to shuttle around fxs 
@@ -34,23 +28,25 @@ params[["beta"]] <- 100
 params[["lapsiness"]] <- .025
 params[["q_learner_prop"]] <- .9
 params[["actor_LR"]] <- .1
-params[["q_LR"]] <- .01
+params[["q_LR"]] <- .1
 params[["critic_LR"]] <- .1
 helpers[["params"]] <- params
 helpers[["sim_or_opt"]] <- 1 # Simulate (1) or optimize (2)? (opt not yet built)
+helpers[["n_trials"]] <- n_trials
 training_trials <- unlist(lapply(1:n_trials, function(x) sample(states, 1))) # 1 training phase
-train_df <- data.frame("trial"=1:n_trials, "stimuli"=training_trials)
-helpers[["train_df"]] <- train_df
+
+# train_df <- data.frame("trial"=1:n_trials, "stimuli"=training_trials)
+# helpers[["train_df"]] <- train_df
 
 # More settings
-parallelize <- 1
+parallelize <- 0
 verbose <- 1 # Trial-wise print out?
 
 iters <- 80
 if (parallelize) {
-  out <- foreach(i=1:iters) %dopar% RunATrainPhase(states, key, state_key, helpers, 1)   
+  out <- foreach(i=1:iters) %dopar% RunATrainPhase(states, key, state_key, helpers, verbose)   
 } else {
-  out <- foreach(i=1:iters) %do% RunATrainPhase(states, key, state_key, helpers, 1)   
+  out <- foreach(i=1:iters) %do% RunATrainPhase(states, key, state_key, helpers, verbose)   
 }
 
 for (iter in 1:iters) out[[iter]]$iter <- iter # Label iteration

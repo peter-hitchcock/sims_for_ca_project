@@ -4,21 +4,29 @@ UpdateCriticValue <- function(c_values, sidx, critic_LR, outcome, helpers, verbo
   ### Update the appropriate critic value based on the state we're in ###
   # Calc's a PE based on state value. Then passes this to actor to update its weights 
   # Args: sidx=state value
+  #browser()
   c_values <- as.numeric(unlist(c_values))
-  AC_PE <- as.numeric(outcome - c_values[sidx]) #as.numeric(unlist(c_values))[sidx]
+  outcome <- as.numeric(outcome)
+  cat("\n Outcome:", outcome)
+  #browser(expr=helpers[["trial_n"]]==40)
+  AC_PE <- as.numeric(as.numeric(outcome) - c_values[sidx]) #as.numeric(unlist(c_values))[sidx]
   c_values[sidx] <- as.numeric(c_values[sidx] + critic_LR * AC_PE)
-  if (!is.null(verbose)) cat("\n c_values", as.numeric(unlist(c_values))[sidx])
+  #if (verbose) 
+  cat("\n Critic value", as.numeric(unlist(c_values))[sidx])
+  cat("\n Critic PE", AC_PE)
 list("critic_values"=c_values, "AC_PE"=AC_PE)
 } 
 UpdateActorWeights <- function(a_weights, sidx, action, actor_LR, AC_PE, helpers) {
   ### Update the action weight only in the wake of a pos. PE. Args: sidx=state value ###
   # ** Check this.. If I understood from Geana paper this is only when PE is non-negative
-  if (AC_PE > 0) a_weights[sidx, action] <- a_weights[sidx, action] + actor_LR * AC_PE
+  #if (AC_PE > 0) 
+  a_weights[sidx, action] <- a_weights[sidx, action] + actor_LR * AC_PE
 a_weights  
 }
 CalcQVals <- function(q_vals, q_LR, sidx, action, outcome, helpers) {
   ### Calc Q vals tracking full reward info. Args: sidx=state value ###
   qPE <- outcome - q_vals[sidx, action]
+  cat("\n Q PE", qPE)
   q_vals[sidx, action] <- q_vals[sidx, action] + q_LR * qPE
 q_vals
 }
@@ -26,7 +34,7 @@ MixACAndQVals <- function(qv_row, aw_row, q_learner_prop, helpers) {
   ### Mix q values and AC values for this state outputting hybrid values ###
   mix_weight <- (1 - q_learner_prop) * aw_row + qv_row * q_learner_prop
   #browser()
-  mix_weight  
+mix_weight  
 } 
 # **Not implementing decay yet because just starting with training phase
 
@@ -48,6 +56,7 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
   ### Run through one training phase ###
   ############# # Set up a training experiment  ###########
   # Unpack stuff we'll need from helpers 
+  
   params <- helpers[["params"]]
   beta <- params[["beta"]]
   lapsiness <- params[["lapsiness"]]
@@ -59,19 +68,28 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
   #training_df <- helpers[["training_df"]]
   training_trials <- unlist(lapply(1:n_trials, function(x) sample(states, 1))) # 1 training phase
   sim_or_opt <- helpers[["sim_or_opt"]]
+  #a_weights <- rep(0, 8)
   
   stim_set <- key$stim # Vectorize 
   trial_keeper <- list()
   
+  # Critic value matrix = just values for the 4 states
+  critic_values <- rep(0, length(states))
+  AC_PE <- 0
+  #critic_dynamics <- list("critic_values"=c_values, "AC_PE"=AC_PE) # Package up the critic's dynamics
+  # Action weights comprising weights for the two available actions in each of the 4 states
+  a_weights <- matrix(rep(0, length(states)*2), nrow=length(states))
+  q_vals <- matrix(rep(0, length(states)*2), nrow=length(states))
+  
   ## Loop through trials ##
   for (tidx in 1:n_trials) {
-    sidx <- as.numeric(which(as.character(train_df$stimuli)[tidx]==states)) # State index
+    sidx <- as.numeric(which(as.character(training_trials)[tidx]==states)) # State index
     state <- states[sidx] # Character repr of state 
-    if (!is.null(verbose)) cat("\n ### Trial ", tidx, "####",
+    if (verbose) cat("\n ### Trial ", tidx, "####",
                                "\n ---State", state, "---")
     helpers[["trial_n"]] <- tidx
-    ## Mix values and find choice probs ## 
     
+    ## Mix values and find choice probs ## 
     mix_values <- MixACAndQVals(q_vals[sidx, ], a_weights[sidx, ], q_learner_prop, helpers)
     left_prob_sm <- CalcSoftmaxProbLeft(mix_values, beta)
     # ** to do check choice probs 
@@ -101,10 +119,10 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
         outcome <- 0
       }
     }
-    if (!is.null(verbose)) cat("\n Mix values", mix_values,
+    if (verbose) cat("\n Mix values", mix_values,
                                "\n Prob left choice", left_prob_sm,
                                "\n Mixed values ", unlist(mix_values),
-                               "\n Full choice prob (softmax + undirected)", unlist(left_full_prob),
+                               "\n Probability of choosing left (softmax + undirected)", unlist(left_full_prob),
                                "\n Choose", choice,
                                "\n Correct?     ", ifelse(correct, "Yes!", "Nooope"),
                                "\n Probability of non-zero outcome", unlist(p_nz),
@@ -112,14 +130,15 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
     
     ## Learn based on result ## 
     # Critic who has RPEs just on state values.. 
-    critic_out <- UpdateCriticValue(critic_dynamics["critic_values"], sidx, critic_LR, outcome)
-    AC_PE <- unlist(critic_out["AC_PE"])
+    critic_out <- UpdateCriticValue(critic_values, sidx, critic_LR, outcome, helpers, verbose)
+    #browser(expr=tidx==40)
+    critic_values <- unlist(critic_out[["critic_values"]])
+    AC_PE <- unlist(critic_out[["AC_PE"]])
     # .. and actor who computes on s,a pairs but just has access to the critic's values 
     a_weights <- UpdateActorWeights(a_weights, sidx, action, actor_LR, AC_PE) 
     
     q_vals <- CalcQVals(q_vals, q_LR, sidx, action, outcome) 
-    
-    if (!is.null(verbose)) { cat("\n           A-C             |       Q v \n")
+    if (verbose) { cat("\n           A-C             |       Q v \n")
       write.table(format(cbind(a_weights, q_vals), justify="right"),
                   row.names=F, col.names=F, quote=F) }
     
