@@ -19,14 +19,13 @@ list("critic_values"=c_values, "AC_PE"=AC_PE)
 UpdateActorWeights <- function(a_weights, sidx, action, actor_LR, AC_PE, helpers) {
   ### Update the action weight only in the wake of a pos. PE. Args: sidx=state value ###
   # ** Check this.. If I understood from Geana paper this is only when PE is non-negative
-  #if (AC_PE > 0) 
-  a_weights[sidx, action] <- a_weights[sidx, action] + actor_LR * AC_PE
+  if (AC_PE > 0) a_weights[sidx, action] <- a_weights[sidx, action] + actor_LR * AC_PE
 a_weights  
 }
 CalcQVals <- function(q_vals, q_LR, sidx, action, outcome, helpers) {
   ### Calc Q vals tracking full reward info. Args: sidx=state value ###
   qPE <- outcome - q_vals[sidx, action]
-  cat("\n Q PE", qPE)
+  #cat("\n Q PE", qPE)
   q_vals[sidx, action] <- q_vals[sidx, action] + q_LR * qPE
 q_vals
 }
@@ -96,7 +95,6 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
     left_full_prob <- MixLeftChoiceWRandom(left_prob_sm, lapsiness)
     
     if (sim_or_opt==1) {
-      if (tidx>300) verbose <- 1
       ## Simulate choice.. 
       rd <- runif(1, 0, 1)
       if (rd < left_full_prob) { choice <- "left"  } else { choice <- "right" }
@@ -114,19 +112,33 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
         action <- 2
       }
       # Find if the choice was correct ie. optimal this trial 
-      correct <- ifelse(choice==as.character(state_key[states==state, "better_choice"]), 1, 0)
+      
+      if (choice==as.character(state_key[states==state, "better_choice"])) { 
+        correct <- 1
+      } else { 
+        correct <- 0
+      }
       
       # .. and outcome ##
       row_idx <- which(stim_set==stim)
-      p_nz <- key[row_idx, "p_nz"]
+      p_nz <- as.numeric(key[row_idx, "p_nz"])
       pos_or_neg <- key[row_idx, "pos_or_neg"]
-      outcome_str <- ifelse(p_nz < runif(1, 0, 1), "non_zero", "zero")
+      rd2 <- runif(1, 0, 1)
+      if (rd2 < p_nz) {
+        outcome_str <- "non_zero"
+      } else {
+        outcome_str <- "zero"
+      }
       # Outcomes are probabilistically 0 so check if non-zero..
       if (as.character(outcome_str)=="non_zero") {
         # If non-zero, assign correct / incorrect outcome 
         #**Setting these arbitrarily, need to check on what's done. Also will need to change for 
         # magnitude manip. 
-        outcome <- ifelse(pos_or_neg==1, 1, -1) #.05, -.05) 
+        if (pos_or_neg==1) {
+          outcome <- 1
+        } else {
+          outcome <- -1
+        }
       } else { 
         outcome <- 0
       }
@@ -139,7 +151,6 @@ RunATrainPhase <- function(states, key, state_key, helpers, verbose=NULL) {
                                "\n Correct?     ", ifelse(correct, "Yes!", "Nooope"),
                                "\n Probability of non-zero outcome", unlist(p_nz),
                                "\n Outcome", outcome)
-    
     ## Learn based on result ## 
     # Critic who has RPEs just on state values.. 
     critic_out <- UpdateCriticValue(critic_values, sidx, critic_LR, outcome, helpers, verbose)

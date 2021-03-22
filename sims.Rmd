@@ -25,8 +25,10 @@ distinguish these
     - then at end have them try to identify probabilities and rewards explicitly  
 
 
-Experimental setup 
+
+
 ```{r}
+########################### Set Up Experiment ###########################
 states <- c("ab", "cd", "ef", "gh")
 every_stim <- c("a", "b", "c", "d", "e", "f", "g", "h")
 better_state <- c("left", "left", "right", "right")
@@ -36,40 +38,38 @@ key <- data.table("stim"=every_stim,
                   "p_nz"=c(.9, .8, .2, .1, .9, .8, .2, .1)) # Probability of non-zero outcome
 # To determine if made the optimal choice on a trial
 state_key <- data.table(states, "better_choice"=better_state)
-```
+######################################################################
 
-# Create actor-critic simulation testbed  
-
-```{r}
-# Critic value matrix = just values for the 4 states
-c_values <- rep(0, length(states))
-AC_PE <- 0
-critic_dynamics <- list("critic_values"=c_values, "AC_PE"=AC_PE) # Package up the critic's dynamics
-# Action weights comprising weights for the two available actions in each of the 4 states
-a_weights <- matrix(rep(0, length(states)*2), nrow=length(states))
-q_vals <- matrix(rep(0, length(states)*2), nrow=length(states))
-```
-
-
-Set up some learning and choice functions  
-```{r}
+############ Create actor-critic simulation testbed  ##################
 ## Initializations ##
+n_trials <- 400
 helpers <- list() # List of stuff we'll need to shuttle around fxs 
 params <- list() # Free pars
-params[["beta"]] <- 10
-params[["lapsiness"]] <- 0.5
+params[["beta"]] <- 100
+params[["lapsiness"]] <- .025
 params[["q_learner_prop"]] <- .9
 params[["actor_LR"]] <- .1
 params[["q_LR"]] <- .1
 params[["critic_LR"]] <- .1
 helpers[["params"]] <- params
 helpers[["sim_or_opt"]] <- 1 # Simulate (1) or optimize (2)? (opt not yet built)
-#train_df <- data.frame("trial"=1:n_trials, "stimuli"=training_trials)
-#helpers[["train_df"]] <- train_df
+helpers[["n_trials"]] <- n_trials
+training_trials <- unlist(lapply(1:n_trials, function(x) sample(states, 1))) # 1 training phase
 
 # More settings
-parallelize <- 0
-verbose <- 1 # Trial-wise print out?
+parallelize <- 1
+if (parallelize) registerDoParallel(cores=round(detectCores()*2/3))
+verbose <- 0 # Trial-wise print out?
+
+# iters <- 80
+# if (parallelize) {
+#   out <- foreach(i=1:iters) %dopar% RunATrainPhase(states, key, state_key, helpers, verbose)   
+# } else {
+#   out <- foreach(i=1:iters) %do% RunATrainPhase(states, key, state_key, helpers, verbose)   
+# }
+# 
+# for (iter in 1:iters) out[[iter]]$iter <- iter # Label iteration
+# out_dt <- do.call(rbind, out)
 ```
 
 Testing: 
@@ -86,12 +86,13 @@ q_learner_prop_range <- seq(.25, .9, .05)
 ql_train_test <- lapply(q_learner_prop_range, function(x) {
   # Simulate q_learner at a given range #
   params[["q_learner_prop"]] <- x
-  helpers[["n_trials"]] <- 100
+  helpers[["n_trials"]] <- 300
   iters <- 100
   if (parallelize) {
-    out <- foreach(i=1:iters) %dopar% RunATrainPhase(states, key, state_key, helpers, 1)   
+    verbose <- 0
+    out <- foreach(i=1:iters) %dopar% RunATrainPhase(states, key, state_key, helpers, verbose)   
   } else {
-    out <- foreach(i=1:iters) %do% RunATrainPhase(states, key, state_key, helpers, 1)   
+    out <- foreach(i=1:iters) %do% RunATrainPhase(states, key, state_key, helpers, verbose)   
   }
   
   for (iter in 1:iters) out[[iter]]$iter <- iter # Label iteration

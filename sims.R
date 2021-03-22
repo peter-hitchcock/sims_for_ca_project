@@ -26,7 +26,7 @@ helpers <- list() # List of stuff we'll need to shuttle around fxs
 params <- list() # Free pars
 params[["beta"]] <- 10
 params[["lapsiness"]] <- .025
-params[["q_learner_prop"]] <- .9
+params[["q_learner_prop"]] <- 1
 params[["actor_LR"]] <- .1
 params[["q_LR"]] <- .1
 params[["critic_LR"]] <- .1
@@ -49,7 +49,9 @@ if (parallelize) {
 for (iter in 1:iters) out[[iter]]$iter <- iter # Label iteration
 out_dt <- do.call(rbind, out)
 
-# Not improving over time so still seems to be a bug
 summs <- out_dt %>% group_by(tidx) %>% summarize(m=mean(correct))
-ggplot(summs, aes(x=tidx, y=m)) + geom_line() 
 
+# From eyeballing it, seems like there's lot of random variation even w 100 iters and that 
+# this param does not lead to much diff in the acc data w these settings 
+ggplot(summs, aes(x=tidx, y=m)) + geom_line(size=2) + 
+  ga + ap + geom_hline(yintercept=.5) + facet_wrap(~ q_learner_prop) 
