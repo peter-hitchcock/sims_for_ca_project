@@ -3,6 +3,8 @@ sf <- function() sapply(paste0("./Functions/", list.files("./Functions/", recurs
 sf()
 DefPlotPars()
 registerDoParallel(cores=round(detectCores()*2/3))
+
+
 # Params to potentially manipulate: 
 # magnitude (like the SCZ studies)   
 # probability, especially lucas-newman lab work and general idea worry = less precise prob est  

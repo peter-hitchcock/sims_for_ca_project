@@ -15,6 +15,7 @@ DefPlotPars()
 ```
 
 # Params to consider manipulating:  
+
 - have transfer phase after every train phase?
 - magnitude (like the SCZ studies)   
 - probability, especially lucas-newman lab work and general idea worry = less precise prob est  
@@ -23,9 +24,6 @@ distinguish these
   - could have more stimuli eg. 16 w matched rew probabilities but different amounts of reward  
     - and could have rews less predictable so harder to understand structure (eg. 1 3 4 5 7 -6)  
     - then at end have them try to identify probabilities and rewards explicitly  
-
-
-
 
 ```{r}
 ########################### Set Up Experiment ###########################
@@ -113,25 +111,7 @@ summs <- ql_train_dt %>% group_by(tidx, q_learner_prop, group=1) %>% summarize(m
 ggplot(summs, aes(x=tidx, y=m)) + geom_line(size=.8) + 
   ga + ap + geom_hline(yintercept=c(.5, .6, .7, .8, .9)) + facet_wrap(~ q_learner_prop) 
 ```
-Simming risky choice tasks  
-
-```{r}
-# Rutledge et al 14 - risky gambling task  
-# - gain (win/0 risk), loss (lose/0 risk), mixed (win/lose risk) trials  
-# going to start w just win for comparability to konova task 
-n_trials <- 50
-# 5 certain amts and 10 multipliers. Presumably these are randomly chosen 
-certain <- c(20, 30, 40, 50, 60) # pence in Rutledge 
-gain_multipliers <- c(1.68, 1.82, 2, 2.22, 2.48, 2.8, 3.16, 3.6, 4.2, 5)
-# Enumerate options of all trials 
-trial_key <- data.table(expand.grid("certain"=certain, "gain_multipliers"=gain_multipliers))
-
-
-CalcSoftmaxCertain <- function(values, beta, helpers) {
-### Softmax choice fx. Outputs chance of picking left stimulus ###
-exp(beta * values[1])/sum(exp(beta * values[1]), exp(beta * values[2]))  
-}
-```
+# Simming risky choice tasks  - All code now in sims.R
 
 From supplement Konova, risk tolerance is around 1 on average exponentiated. The parameter is 
 $$EV^{risk}$$  
@@ -142,57 +122,8 @@ Plan:
   - Then consider alternate specs of task (eg. 25/50/75 probs a la Konova)
   - And possibly add in ambiguous risk 
   
-```{r}
-sim_opt <- "sim"
-risk_tols <- rep(seq(.4, 2, .1), 8)
-gamble_prob <- .5
-```
 
-
-```{r}
-sim_out <- lapply(risk_tols, function(x) {
-  # Preselect the order in which will sample certain vs. choice options 
-  trial_key_sampler <- sample(1:50, 50, replace=FALSE)
-  
-  # Preallocations for choices and certain and gamble option 
-  choices <- rep(NA, length(trial_key_sampler))
-  certain_values <- rep(NA, length(trial_key_sampler))
-  gamble_values <- rep(NA, length(trial_key_sampler))
-  
-  for (tidx in 1:nrow(trial_key)) {
-    ## Set up values this trial ##
-    tr_choices <- trial_key[tidx] # Get the options this trial
-    certain_value <- as.numeric(tr_choices$certain/60) # Divide by 60 to bring vals to 0 to 1
-    gamble_value <- certain_value * as.numeric(tr_choices$gain_multipliers)
-    gamble_EV <- gamble_value^x * gamble_prob
-    EVs <- c(certain_value, gamble_EV)
-    
-    ## Choose ##
-    certain_choice_prob <- CalcSoftmaxCertain(EVs, params[["beta"]], helpers)
-    if (sim_opt=="sim") {
-      rd <- runif(1, 0, 1)
-      if (rd < certain_choice_prob) { choice <- "certain"  } else { choice <- "risk" }
-    }
-    ## Store outs ##      
-    choices[tidx] <- choice
-    certain_values[tidx] <- certain_value
-    gamble_values[tidx] <- gamble_value
-  }
-  
-data.table("choices"=choices, 
-           "risk_tolerance"=x, 
-           "certain_values"=certain_values, 
-           "gamble_values"=gamble_values)
-})  
-for (sim in seq_along(risk_tols)) sim_out[[sim]]$sim_ID <- sim # Label each sim
-out_dt <- do.call(rbind, sim_out)
-#%>% bind_rows()
-
-table(out_dt$risk_tolerance, out_dt$choices)
-
-```
-
-Parameter recovery for task variants  
+## Parameter recovery for task variants  
 
 Variant 1 
 
