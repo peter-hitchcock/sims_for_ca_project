@@ -192,3 +192,25 @@ table(out_dt$risk_tolerance, out_dt$choices)
 
 ```
 
+Parameter recovery for task variants  
+
+Variant 1 
+
+Exact variant from Rutledge et al. 14 modeled using risk tol approach from Konova et al. 19 
+but w/o modeling ambiguity since that's not present 
+
+Results: Complete inability to recover beta. 
+- Next step: vary probability to see if that improves ability to identify unknown risk and in turn beta  
+```{r}
+## Variants 
+variant_1 <- 
+  read.table("./../../data/model_res/dev_sim_param_recov/pr_tv1", sep=",", header=TRUE)
+```
+
+```{r}
+ggplot(variant_1, aes(x=beta_sim, y=beta_opt)) + 
+  geom_point(size=4, pch=21, fill="gray57") + ga + ap
+ggplot(variant_1, aes(x=risk_tol_sim, y=risk_tol_opt)) + 
+  geom_point(size=4, pch=21, fill="gray57") + ga + ap
+```
+

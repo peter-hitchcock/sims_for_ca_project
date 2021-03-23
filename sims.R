@@ -104,17 +104,29 @@ sim_opt <- "opt"
 tmp <- out_dt_2 %>% filter(sim_ID==1)
 params <- data.frame("beta"=4, "risk_tol"=1)
 helpers[["dt"]] <- tmp
-optim(par=params,
+res <- optim(par=params,
       fn=function(params) { RunARiskChoicePhase(params, helpers, sim_opt) },#RunARiskChoicePhase(helpers, sim_opt),
       method=c("L-BFGS-B"),
       lower=c(1, .1), upper=c(100, 2))
 # Optimize for beta and risk tolerance to test recovery 
-lapply(split(out_dt_2, out_dt_2$sim_ID), function(x) {
+opt_res_2 <- lapply(split(out_dt_2, out_dt_2$sim_ID), function(x) {
   helpers[["dt"]] <- x 
-  
+  res <- optim(par=params,
+               fn=function(params) { RunARiskChoicePhase(params, helpers, sim_opt) },#RunARiskChoicePhase(helpers, sim_opt),
+               method=c("L-BFGS-B"),
+               lower=c(1, .1), upper=c(100, 4))
+
+
+data.table(unique(x$risk_tolerance), 
+           unique(x$beta), data.table(t(res$par), 
+           res$value, res$message)) %>% setNames(
+             c("beta_sim", "risk_tol_sim", "beta_opt", "risk_tol_opt", "nll", "message")
+           )
 })
        
 
+tv1 <- data.table(opt_res_2 %>% bind_rows()) # Task variant 1
+write.csv(tv1, "./../../data/model_res/dev_sim_param_recov/pr_tv1")
 ######################################################################
 
 ##########  SIMS OF KONOVA ET AL. 19 AMBIG RISK TASK ##################
