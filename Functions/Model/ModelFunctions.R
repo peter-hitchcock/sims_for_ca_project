@@ -18,7 +18,9 @@ list("critic_values"=c_values, "AC_PE"=AC_PE)
 } 
 UpdateActorWeights <- function(a_weights, sidx, action, actor_LR, AC_PE, helpers) {
   ### Update the action weight only in the wake of a pos. PE. Args: sidx=state value ###
-  # ** Check this.. If I understood from Geana paper this is only when PE is non-negative
+  # ** Check this.. If I understood from Geana paper this is only when PE is positive
+  # * Also, notes this should grow without bound unless these are normalized, which is 
+  # not yet implemented. May be needed in optimization.
   if (AC_PE > 0) a_weights[sidx, action] <- a_weights[sidx, action] + actor_LR * AC_PE
 a_weights  
 }
@@ -177,6 +179,11 @@ CalcSoftmaxCertain <- function(values, beta, helpers) {
   ### Softmax choice fx. Outputs chance of picking left stimulus ###
 exp(beta * values[1])/sum(exp(beta * values[1]), exp(beta * values[2]))  
 }
+CalcAltProbCertain <- function(values, helpers, stochasticity=8) {
+  ### Softmax choice fx. Outputs chance of picking left stimulus ###
+values[1]^(1/stochasticity)/
+    sum(values[1]^(1/stochasticity), values[2]^(1/stochasticity))  
+}
 RunARiskChoicePhase <- function(params, helpers, sim_opt) {
   ### Run through a phase of choice task to sim or opt ###
   #Preselect the order in which will sample certain vs. choice options 
@@ -191,7 +198,6 @@ RunARiskChoicePhase <- function(params, helpers, sim_opt) {
     risk_tol <- as.numeric(params["risk_tol"])
     beta <- as.numeric(params["beta"])
   }
-  
   
   # Preallocations for choices and certain and gamble option 
   if (sim_opt=="sim") {
@@ -251,6 +257,93 @@ RunARiskChoicePhase <- function(params, helpers, sim_opt) {
       gamble_values[tidx] <- gamble_value
     }
   
+  }
+  
+  if (sim_opt=="sim") {
+    out <- data.table("choices"=choices, 
+                      "actions"=actions,
+                      "risk_tolerance"=risk_tol,
+                      "beta"=beta,
+                      "certain_values"=certain_values, 
+                      "gamble_values"=gamble_values)
+  } 
+  if (sim_opt=="opt") {
+    out <- sum(nll_store)
+  }
+out  
+}
+RunARiskChoicePhaseV2 <- function(params, helpers, sim_opt) {
+  ### Run through a phase of choice task to sim or opt ###
+  #Preselect the order in which will sample certain vs. choice options 
+  
+  #if (sim_opt=="sim") params <- helpers[["params"]]
+  
+  if (sim_opt=="sim") {
+    risk_tol <- params$risk_tol
+    beta <- params$beta  
+  } 
+  if (sim_opt=="opt") {
+    risk_tol <- as.numeric(params["risk_tol"])
+  }
+  
+  # Preallocations for choices and certain and gamble option 
+  if (sim_opt=="sim") {
+    trial_key <- helpers[["trial_key"]]
+    trial_key_sampler <- sample(1:50, 50, replace=FALSE)
+    n_trials <- nrow(trial_key)
+    choices <- rep(NA, length(trial_key_sampler))
+    actions <- rep(NA, length(trial_key_sampler))
+    certain_values <- rep(NA, length(trial_key_sampler))
+    gamble_values <- rep(NA, length(trial_key_sampler))
+  }
+  if (sim_opt=="opt") {
+    subj_dt <- helpers[["dt"]]
+    n_trials <- nrow(subj_dt)
+    nll_store <- rep(NA, length(trial_key_sampler))
+  } 
+  print(params)
+  for (tidx in 1:n_trials) {
+    ## Set up values this trial ##
+    # Pull from trial key or from input dt
+    if (sim_opt=="sim") {
+      tr_choices <- trial_key[tidx, ] # Get the options this trial
+      gamble_value <- certain_value * as.numeric(tr_choices$gain_multipliers) 
+    }
+    if (sim_opt=="opt") {
+      tr_choices <- subj_dt[tidx, ]
+      gamble_value <- tr_choices$gamble_values
+    } 
+    certain_value <- as.numeric(tr_choices$certain/60) # Divide by 60 to bring vals to 0 to 1
+    gamble_EV <- gamble_value^risk_tol * gamble_prob
+    EVs <- c(certain_value, gamble_EV)
+    
+    ## Choose ##
+    #browser(expr=tidx==2)
+    if (sim_opt=="sim") certain_choice_prob <- CalcAltProbCertain(EVs, helpers)
+    if (sim_opt=="opt") {
+      #browser(expr=tidx==2)
+      if (as.numeric(tr_choices$actions)==1) {
+        choice_prob <- CalcAltProbCertain(EVs, helpers)
+      } else {
+        choice_prob <- 1 - CalcAltProbCertain(EVs, helpers)
+      }
+      nll_store[tidx] <- -log(choice_prob)
+      #print(nll_store[tidx])
+    }
+    
+    if (sim_opt=="sim") {
+      rd <- runif(1, 0, 1)
+      #print(rd)
+      if (rd < certain_choice_prob) { choice <- "certain" } else { choice <- "gamble" }
+      if (choice=="certain") action <- 1 # action idx
+      if (choice=="gamble") action <- 2
+      ## Store outs ##      
+      choices[tidx] <- choice
+      actions[tidx] <- action
+      certain_values[tidx] <- certain_value
+      gamble_values[tidx] <- gamble_value
+    }
+    
   }
   
   if (sim_opt=="sim") {

@@ -30,8 +30,13 @@ helpers <- list(
   "trial_key"=trial_key
 )
 
+########################### Experiments ###########################
+# Task variant 1
+
+# To do: Step thru choice fx and make sure it's working properly
 # Simulate varying risk tolerances x
 risk_tols <- rep(seq(.4, 2, .1), 8)
+sim_opt <- "sim"
 if (sim_opt=="sim") {
   
   sim_out <- lapply(risk_tols, function(x) {
@@ -53,13 +58,6 @@ if (sim_opt=="sim") {
 }
 
 sim_opt <- "opt"
-tmp <- out_dt_2 %>% filter(sim_ID==1)
-params <- data.frame("beta"=4, "risk_tol"=1)
-helpers[["dt"]] <- tmp
-res <- optim(par=params,
-             fn=function(params) { RunARiskChoicePhase(params, helpers, sim_opt) },#RunARiskChoicePhase(helpers, sim_opt),
-             method=c("L-BFGS-B"),
-             lower=c(1, .1), upper=c(100, 2))
 # Optimize for beta and risk tolerance to test recovery 
 opt_res_2 <- lapply(split(out_dt_2, out_dt_2$sim_ID), function(x) {
   helpers[["dt"]] <- x 
@@ -76,9 +74,69 @@ opt_res_2 <- lapply(split(out_dt_2, out_dt_2$sim_ID), function(x) {
                                         )
 })
 
+tv1 <- data.table(opt_res_2 %>% bind_rows()) # Task variant 1
+#write.csv(tv1, "./../../data/model_res/dev_sim_param_recov/pr_tv1")
+## End TV1 ## 
+
+
+## TV 2 ## 
+# Simulate varying risk tolerances x
+
+# Notes:  
+# Konova et al. didn't use a softmax but rather this choice fx 
+# From playing around with different default settings of this while 
+# varying risk tol, seems that it produces some propensity toward 
+# gambling > certainty as a fx of risk tol at low levels (.5 and 1) but
+# at higher levels this breaks down and choices become v mixed 
+
+# This surprises me since higher mu means more deterministic like 
+# inv temp in softmax. 
+risk_tols <- rep(seq(.4, 2, .1), 8)
+sim_opt <- "sim"
+if (sim_opt=="sim") {
+  
+  sim_out <- lapply(risk_tols, function(x) {
+    #params <- list()
+    params <- data.frame("risk_tol"=x)
+    # params[["beta"]] <- 4
+    # params[["risk_tol"]] <- x
+    #helpers[["params"]] <- params
+    
+    out <- RunARiskChoicePhaseV2(params, helpers, sim_opt)
+    
+    out
+  })   
+  sim_out
+  for (sim in seq_along(risk_tols)) sim_out[[sim]]$sim_ID <- sim # Label each sim
+  out_dt_2 <- do.call(rbind, sim_out)
+  
+  print(table(out_dt_2$risk_tolerance, out_dt_2$choices))
+}
+
+
+# Optimize for beta and risk tolerance to test recovery 
+opt_res_2 <- lapply(split(out_dt_2, out_dt_2$sim_ID), function(x) {
+  helpers[["dt"]] <- x 
+  res <- optim(par=params,
+               fn=function(params) { RunARiskChoicePhaseV2(params, helpers, sim_opt) },#RunARiskChoicePhase(helpers, sim_opt),
+               method=c("L-BFGS-B"),
+               lower=c(1, .1), upper=c(100, 4))
+  
+  
+  data.table(unique(x$risk_tolerance), 
+             unique(x$beta), data.table(t(res$par), 
+                                        res$value, res$message)) %>% setNames(
+                                          c("beta_sim", "risk_tol_sim", "beta_opt", "risk_tol_opt", "nll", "message")
+                                        )
+})
+
 
 tv1 <- data.table(opt_res_2 %>% bind_rows()) # Task variant 1
-write.csv(tv1, "./../../data/model_res/dev_sim_param_recov/pr_tv1")
+#write.csv(tv1, "./../../data/model_res/dev_sim_param_recov/pr_tv1")
+## End TV2 ##
+
+######################################################################
+
 ######################################################################
 
 ##########  SIMS OF KONOVA ET AL. 19 AMBIG RISK TASK ##################

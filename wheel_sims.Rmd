@@ -1,0 +1,91 @@
+---
+title: "wheel-sims"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+sapply(c("stringr", "dplyr", "data.table", "purrr", "foreach", "doParallel", "ggplot2", "patchwork"), require, character=TRUE)
+sf <- function() sapply(paste0("./Functions/", list.files("./Functions/", recursive=TRUE)), source) # Source all fxs
+sf()
+DefPlotPars()
+```
+
+
+```{r}
+wheel_sim <- data.frame(rep(rep(c("zero", "negative"), 2), 2), 
+            rep(c(rep("gain", 2), rep("loss", 2)), 2)) %>% 
+  setNames(c("next_wheel_EV", "context"))
+
+wheel_sim$worry <- c(rep(c(3, 6), 2), c(5, 9, 1, 3))
+
+wheel_sim$condition <- c(rep("cognitive_avoid", 4), rep("contrast_avoid", 4))
+
+wheel_sim$next_wheel_EV <- factor(wheel_sim$next_wheel_EV, levels=c("zero", "negative"))
+
+wheel_sim$context <- factor(wheel_sim$context, levels=c("loss", "gain"))
+
+a <- ggplot(wheel_sim[wheel_sim$condition == "cognitive_avoid", ], aes(x=next_wheel_EV, y=worry, fill=context)) + 
+  geom_bar(stat="identity", color="black", position=position_dodge()) + 
+  ggtitle("Cognitive avoidance") + ga + ap + tp + tol +
+  xlab("expected value of upcoming wheel") + scale_fill_manual(values=c("orange", "purple")) +
+  ylim(0, 10) + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+
+b <- ggplot(wheel_sim[wheel_sim$condition == "contrast_avoid", ], aes(x=next_wheel_EV, y=worry, fill=context)) + 
+  geom_bar(stat="identity", color="black", position=position_dodge()) +
+  ggtitle("Contrast avoidance") + ga + ap + tp + lp +
+  xlab("expected value of upcoming wheel") +
+  scale_fill_manual(values=c("orange", "purple"), 
+                    labels=c("loss", "gain"), name="Context") +
+  ylab("") +
+  ylim(0, 10) + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+
+
+all <- a + b
+
+all
+
+#ggsave("../../study_dev/figs/worry_predictions_new.png", all, width=11, height=5)
+```
+
+
+
+```{r}
+# wheel_sim <- data.frame(rep(rep(c("zero", "negative"), 3), 2), 
+#             rep(c(rep("zero", 2), rep("gain", 2), rep("loss", 2)), 2)) %>% 
+#   setNames(c("next_wheel_EV", "context"))
+# 
+# wheel_sim$worry <- c(rep(c(3, 6), 3), c(3, 6, 5, 9, 1, 3))
+# 
+# wheel_sim$condition <- c(rep("cognitive_avoid", 6), rep("contrast_avoid", 6))
+# 
+# wheel_sim$next_wheel_EV <- factor(wheel_sim$next_wheel_EV, levels=c("zero", "negative"))
+# 
+# wheel_sim$context <- factor(wheel_sim$context, levels=c("loss", "zero", "gain"))
+# 
+# a <- ggplot(wheel_sim[wheel_sim$condition == "cognitive_avoid", ], aes(x=next_wheel_EV, y=worry, fill=context)) + 
+#   geom_bar(stat="identity", color="black", position=position_dodge()) + 
+#   ggtitle("Cognitive avoidance") + ga + ap + tp + tol +
+#   xlab("expected value of upcoming wheel") + scale_fill_manual(values=c("orange", "gray57", "purple")) +
+#   ylim(0, 10) + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+# 
+# b <- ggplot(wheel_sim[wheel_sim$condition == "contrast_avoid", ], aes(x=next_wheel_EV, y=worry, fill=context)) + 
+#   geom_bar(stat="identity", color="black", position=position_dodge()) +
+#   ggtitle("Contrast avoidance") + ga + ap + tp + lp +
+#   xlab("expected value of upcoming wheel") +
+#   scale_fill_manual(values=c("orange", "gray57", "purple"), 
+#                     labels=c("loss", "zero", "gain"), name="Context") +
+#   ylim(0, 10) + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+# 
+# 
+# all <- a + b
+# 
+# all
+
+#ggsave("../../study_dev/figs/worry_predictions_new.png", all, width=12, height=5)
+
+```
+

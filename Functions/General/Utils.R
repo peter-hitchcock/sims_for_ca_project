@@ -8,14 +8,14 @@ DefPlotPars <- function() {
   
   # legend pars #
   lp <<- theme(legend.text = element_text(size = 20),
-               legend.title = element_blank(),
+               legend.title = element_text(size = 25),
                legend.key.size = unit(2.5, 'lines'))
   
   # turn off legend
   tol <<- theme(legend.position='none')
   
   # axis pars #
-  ap <<- theme(axis.text = element_text(size=15),
+  ap <<- theme(axis.text = element_text(size=20),
                axis.title = element_text(size=20))
   # title pars #
   tp <<- theme(plot.title = element_text(size = 20, face='bold', hjust = .5))
